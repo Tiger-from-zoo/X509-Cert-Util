@@ -2,7 +2,7 @@ import subprocess, json
 from pathlib import Path
 from os import getcwd
 
-from tkinter import Tk, Toplevel, Button, Label, Entry, Listbox, messagebox
+from tkinter import Tk, Toplevel, Button, Label, Entry, Listbox, messagebox, Menu
 
 CA_DN_FIELDS = 6
 REQ_CA_DN_FIELDS = 2
@@ -160,14 +160,15 @@ def create_signed_cert(details: Cert_Input):
         print(f"Failed with: {e.returncode}")
         print(f"Output: {completed}")
 
-    CAs[details.CA_name]["issued_certs"][details.dn.CN] = {}
+    if (completed.returncode == 0):
+        CAs[details.CA_name]["issued_certs"][details.dn.CN] = {}
 
-    CAs[details.CA_name]["issued_certs"][details.dn.CN]["cert"] = str(path['certs'] / details.out_name)
-    CAs[details.CA_name]["issued_certs"][details.dn.CN]["key"] = str(path['private'] / details.key_out_name)
+        CAs[details.CA_name]["issued_certs"][details.dn.CN]["cert"] = str(path['certs'] / details.out_name)
+        CAs[details.CA_name]["issued_certs"][details.dn.CN]["key"] = str(path['private'] / details.key_out_name)
 
-    json_path.touch(exist_ok=True)
-    with open(json_path, "w+", encoding="utf-8") as f:
-        json.dump(CAs, f, indent=2)
+        json_path.touch(exist_ok=True)
+        with open(json_path, "w+", encoding="utf-8") as f:
+            json.dump(CAs, f, indent=2)
 
     return
 def export_full_chain(details: Cert_Input):
