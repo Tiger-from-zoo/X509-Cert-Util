@@ -58,7 +58,7 @@ class Cert_Input:
         setattr(self, var, val)
         return
 
-### TEMPLATE
+### TEMPLATE/STRUCTURE
 # CAs = {
     # "CA": {
         # "root_cert": "path",
@@ -133,6 +133,13 @@ def create_CA(details: Cert_Input):
     return completed
 
 def create_signed_cert(details: Cert_Input):
+    if (details.out_name in CAs[details.CA_name]["issued_certs"]):
+        outx = messagebox.askokcancel("Warning", f"Certificate: \"{details.out_name}\" already exists. Overwrite?", parent=create_CA_window)
+        if (outx is False):
+            return subprocess.CompletedProcess([], 2)
+        else:
+            pass
+    
     details.dn.load(details.CA_name)
 
     command = f"openssl req \
@@ -170,7 +177,7 @@ def create_signed_cert(details: Cert_Input):
         with open(json_path, "w+", encoding="utf-8") as f:
             json.dump(CAs, f, indent=2)
 
-    return
+    return completed
 def export_full_chain(details: Cert_Input):
     command = f"Get-Content {CAs[details.CA_name]["issued_certs"][details.cert1]["path"]}, {CAs[details.CA_name]["issued_certs"][details.cert2]["path"]} ` | Set-Content {path['path_certs'] / details.out_name}"
 
@@ -183,17 +190,17 @@ def export_full_chain(details: Cert_Input):
     except subprocess.CompletedProcess as e:
         print(f"Failed with: {e.returncode}")
         print(f"Output: {completed}")
-    
-    CAs[details.CA_name]["issued_certs"][details.dn.CN] = {}
+    if (completed.returncode == 0):
+        CAs[details.CA_name]["issued_certs"][details.dn.CN] = {}
 
-    CAs[details.CA_name]["issued_certs"][f"fc_{details.out_name}"]["cert"] = str(path['certs'] / details.out_name)
-    CAs[details.CA_name]["issued_certs"][f"fc_{details.out_name}"]["key"] = CAs[details.CA_name]["issued_certs"][details.cert1]["path"]
+        CAs[details.CA_name]["issued_certs"][f"fc_{details.out_name}"]["cert"] = str(path['certs'] / details.out_name)
+        CAs[details.CA_name]["issued_certs"][f"fc_{details.out_name}"]["key"] = CAs[details.CA_name]["issued_certs"][details.cert1]["path"]
 
-    json_path.touch(exist_ok=True)
-    with open(json_path, "w+", encoding="utf-8") as f:
-        json.dump(CAs, f, indent=2)
+        json_path.touch(exist_ok=True)
+        with open(json_path, "w+", encoding="utf-8") as f:
+            json.dump(CAs, f, indent=2)
 
-    return
+    return completed
 def export_pkcs12_pfx(details: Cert_Input):
     command = f"openssl pkcs12 \
     -export \
@@ -213,7 +220,7 @@ def export_pkcs12_pfx(details: Cert_Input):
         print(f"Failed with: {e.returncode}")
         print(f"Output: {completed}")
     
-    return
+    return completed
 
 # GUI
 def create_entry_label_grid(window: Toplevel, fields: list, naming: str, start_idx: int = 0):
@@ -306,16 +313,37 @@ def create_CA_window_button(*args, **kwargs):
 
 
 def create_signed_cert_button(*args, **kwargs):
+    global create_signed_cert
     create_signed_cert = Toplevel(root)
     create_signed_cert.geometry("400x400")
     create_signed_cert.title("Create Signed Certificate")
 
+    for i in range(4):
+        create_CA_window.grid_columnconfigure(i, weight=1)
+
+    ca_dn_row = create_entry_label_grid(create_CA_window, [
+    "* CA Name: ",
+    "* Key length (bits): ",
+    "* Validity (days): ",
+    "* Key file name: ",
+    "* Certificate file name: "], "CA_w")
+    ca_button_row = create_dn_grid(create_CA_window, True, "CA_w", ca_dn_row)
+
+    globals()[f"CA_w_E_{CA_VAR_LIST.index("keylen")}"].insert(0, "4096")
+    globals()[f"CA_w_E_{CA_VAR_LIST.index("validity")}"].insert(0, "3650")
+    globals()[f"CA_w_E_{CA_VAR_LIST.index("key_out_name")}"].insert(0, "priv.key")
+    globals()[f"CA_w_E_{CA_VAR_LIST.index("out_name")}"].insert(0, "root.crt")
+
+    Button(create_CA_window, text="Create", command=lambda: CA_window_wrapper(ca_dn_row, [], [])).grid(row=ca_button_row, column=1, columnspan=2)
+
 def export_fullchain_button(*args, **kwargs):
+    global export_fullchain
     export_fullchain = Toplevel(root)
     export_fullchain.geometry("400x400")
     export_fullchain.title("Export Fullchain/Concatenate")
 
 def export_export_pkcs12_pfx_button(*args, **kwargs):
+    global export_export_pkcs12_pfx
     export_export_pkcs12_pfx = Toplevel(root)
     export_export_pkcs12_pfx.geometry("400x400")
     export_export_pkcs12_pfx.title("Export as PKCS#12/PFX")
