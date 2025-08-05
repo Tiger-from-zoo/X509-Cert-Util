@@ -1,12 +1,13 @@
 import subprocess, json
 from pathlib import Path
 from os import getcwd
+from enum import Enum
 
 from tkinter import Tk, Toplevel, Button, Label, Entry, Listbox, messagebox, Menu
 
 CA_DN_FIELDS = 6
 REQ_CA_DN_FIELDS = 2
-DN_FIELDS = 4
+REQ_DN_FIELDS = 4
 
 FIELDS_DN_SPACE = 2
 
@@ -15,7 +16,13 @@ ATTRS = ["* Common Name (CN): ", "State (ST): ", "Locality (L): ", "UID: "]
 CA_ATTRS_SHORT = ["CN", "O", "C", "ST", "L", "UID"]
 ATTRS_SHORT = ["CN", "ST", "L", "UID"]
 
-CA_VAR_LIST = ["CA_name", "keylen", "validity", "key_out_name", "out_name"]
+VAR_LISTS = [["CA_name", "keylen", "validity", "key_out_name", "out_name"], [], [], []]
+
+class Request_t(Enum):
+    Create_CA = 0
+    Create_Cert = 1
+    Export_Fullchain = 2
+    Export_PFX = 3
 
 class DN_Attributes:
     def __init__(self, **attrs):
@@ -223,58 +230,77 @@ def export_pkcs12_pfx(details: Cert_Input):
     return completed
 
 # GUI
-def create_entry_label_grid(window: Toplevel, fields: list, naming: str, start_idx: int = 0):
+def create_entry_label_grid(window: Toplevel, fields: list, prefix: str, start_idx: int = 0) -> int:
     final_idx: int
     for idx, field in enumerate(fields):
-        globals()[f"{naming}_L_{idx}"] = Label(window, text=field)
-        globals()[f"{naming}_E_{idx}"] = Entry(window)
-        globals()[f"{naming}_L_{idx}"].grid(row=(idx + start_idx), column=1, pady=3)
-        globals()[f"{naming}_E_{idx}"].grid(row=(idx + start_idx), column=2, pady=3)
+        globals()[f"{prefix}_L_{idx}"] = Label(window, text=field)
+        globals()[f"{prefix}_E_{idx}"] = Entry(window)
+        globals()[f"{prefix}_L_{idx}"].grid(row=(idx + start_idx), column=1, pady=3)
+        globals()[f"{prefix}_E_{idx}"].grid(row=(idx + start_idx), column=2, pady=3)
         final_idx = idx
 
-    return (final_idx + 1)
+    return (start_idx + final_idx + 1)
 
-def create_dn_grid(window: Toplevel, CA: bool, naming: str, idx: int):
+def create_dn_grid(window: Toplevel, request: Request_t, prefix: str, idx: int):
     Label(window, text="Distinguished Name Attributes: ").grid(row=(idx + 1), column=1, columnspan=2, sticky="")
-    if (CA == True):
-        create_entry_label_grid(window, CA_ATTRS, f"{naming}_DN", (idx + 2))
-    elif (CA == False):
-        create_entry_label_grid(window, ATTRS, f"{naming}_DN", (idx + 2))
+    if (request == Request_t.Create_CA):
+        return create_entry_label_grid(window, CA_ATTRS, f"{prefix}_DN", (idx + 2))
+    else:
+        return create_entry_label_grid(window, ATTRS, f"{prefix}_DN", (idx + 2))
         
 
-def CA_window_wrapper(fields_end_idx: int, fields: list, dn_fields: list):
+def CA_window_wrapper(request: Request_t, fields_end_idx: int, prefix: str):
     errs = []
     dn_errs = []
     filled_fields = []
 
     details = Cert_Input()
     dn_details = DN_Attributes()
+
+    # Checking to make sure non-DN fields are filled in
     for i in range(fields_end_idx):
-        if (globals()[f"CA_w_E_{i}"].get() != ""):
-            details.set(CA_VAR_LIST[i], globals()[f"CA_w_E_{i}"].get())
-            globals()[f"CA_w_L_{i}"].config(fg="black")
+        if (globals()[f"{prefix}_E_{i}"].get() != ""):
+            details.set(VAR_LISTS[request][i], globals()[f"CA_w_E_{i}"].get())
+            globals()[f"{prefix}_L_{i}"].config(fg="black")
         else:
             errs.append(i)
 
-    for i in range(REQ_CA_DN_FIELDS):
-        if (globals()[f"CA_w_DN_E_{i}"].get() != ""):
-            globals()[f"CA_w_DN_L_{i}"].config(fg="black")
-        else:
-            dn_errs.append(i)
+    # Checking to make sure DN fields are filled in
+    if (request == Request_t.Create_CA):
+        for i in range(REQ_CA_DN_FIELDS):
+            if (globals()[f"{prefix}_DN_E_{i}"].get() != ""):
+                globals()[f"{prefix}_DN_L_{i}"].config(fg="black")
+            else:
+                dn_errs.append(i)
+    elif (request == Request_t.Create_Cert):
+        for i in range(REQ_DN_FIELDS):
+            if (globals()[f"{prefix}_DN_E_{i}"].get() != ""):
+                globals()[f"{prefix}_DN_L_{i}"].config(fg="black")
+            else:
+                dn_errs.append(i)
 
+    # Setting any unfilled fields to red
     if ((len(errs) != 0) or (len(dn_errs) != 0)):
         for err in errs:
-            globals()[f"CA_w_L_{err}"].config(fg="red")
+            globals()[f"{prefix}_L_{err}"].config(fg="red")
 
         for dn_err in dn_errs:
-            globals()[f"CA_w_DN_L_{dn_err}"].config(fg="red")
+            globals()[f"{prefix}_DN_L_{dn_err}"].config(fg="red")
         return
 
-    for i in range(CA_DN_FIELDS):
-        if (globals()[f"CA_w_DN_E_{i}"].get() != ""):
-            filled_fields.append(i)
-    for filled in filled_fields:
-        dn_details.set(CA_ATTRS_SHORT[filled], globals()[f"CA_w_DN_E_{filled}"].get())
+    # Appending filled fields to appropriate payload
+    if (request == Request_t.Create_CA):
+        for i in range(CA_DN_FIELDS):
+            if (globals()[f"{prefix}_DN_E_{i}"].get() != ""):
+                filled_fields.append(i)
+        for filled in filled_fields:
+            dn_details.set(CA_ATTRS_SHORT[filled], globals()[f"{prefix}_DN_E_{filled}"].get())
+    elif (request == Request_t.Create_Cert):
+        for i in range(REQ_DN_FIELDS):
+            if (globals()[f"{prefix}_DN_E_{i}"].get() != ""):
+                filled_fields.append(i)
+        for filled in filled_fields:
+            dn_details.set(ATTRS_SHORT[filled], globals()[f"{prefix}_DN_E_{filled}"].get())
 
     details.dn = dn_details
     create_CA_ret = create_CA(details)
@@ -292,6 +318,8 @@ def create_CA_window_button(*args, **kwargs):
     create_CA_window.geometry("400x400")
     create_CA_window.title("Create CA")
 
+    prefix = "CA_w"
+    req = Request_t.Create_CA
 
     for i in range(4):
         create_CA_window.grid_columnconfigure(i, weight=1)
@@ -301,15 +329,15 @@ def create_CA_window_button(*args, **kwargs):
     "* Key length (bits): ",
     "* Validity (days): ",
     "* Key file name: ",
-    "* Certificate file name: "], "CA_w")
-    ca_button_row = create_dn_grid(create_CA_window, True, "CA_w", ca_dn_row)
+    "* Certificate file name: "], prefix)
+    ca_button_row = create_dn_grid(create_CA_window, req, prefix, ca_dn_row)
 
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("keylen")}"].insert(0, "4096")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("validity")}"].insert(0, "3650")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("key_out_name")}"].insert(0, "priv.key")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("out_name")}"].insert(0, "root.crt")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("keylen")}"].insert(0, "4096")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("validity")}"].insert(0, "3650")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("key_out_name")}"].insert(0, "priv.key")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("out_name")}"].insert(0, "root.crt")
 
-    Button(create_CA_window, text="Create", command=lambda: CA_window_wrapper(ca_dn_row, [], [])).grid(row=ca_button_row, column=1, columnspan=2)
+    Button(create_CA_window, text="Create", command=lambda: CA_window_wrapper(req, ca_dn_row, prefix)).grid(row=ca_button_row, column=1, columnspan=2)
 
 
 def create_signed_cert_button(*args, **kwargs):
@@ -318,6 +346,9 @@ def create_signed_cert_button(*args, **kwargs):
     create_signed_cert.geometry("400x400")
     create_signed_cert.title("Create Signed Certificate")
 
+    prefix = "CRT_w"
+    req = Request_t.Create_CA
+
     for i in range(4):
         create_CA_window.grid_columnconfigure(i, weight=1)
 
@@ -327,12 +358,12 @@ def create_signed_cert_button(*args, **kwargs):
     "* Validity (days): ",
     "* Key file name: ",
     "* Certificate file name: "], "CA_w")
-    ca_button_row = create_dn_grid(create_CA_window, True, "CA_w", ca_dn_row)
+    ca_button_row = create_dn_grid(create_CA_window, True, prefix, ca_dn_row)
 
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("keylen")}"].insert(0, "4096")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("validity")}"].insert(0, "3650")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("key_out_name")}"].insert(0, "priv.key")
-    globals()[f"CA_w_E_{CA_VAR_LIST.index("out_name")}"].insert(0, "root.crt")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("keylen")}"].insert(0, "4096")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("validity")}"].insert(0, "3650")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("key_out_name")}"].insert(0, "priv.key")
+    globals()[f"CA_w_E_{VAR_LISTS[req.value].index("out_name")}"].insert(0, "root.crt")
 
     Button(create_CA_window, text="Create", command=lambda: CA_window_wrapper(ca_dn_row, [], [])).grid(row=ca_button_row, column=1, columnspan=2)
 
